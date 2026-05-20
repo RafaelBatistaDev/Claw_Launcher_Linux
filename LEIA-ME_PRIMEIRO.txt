@@ -1,0 +1,57 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║               🚀 CLAW LAUNCHER LINUX - v1.0.2 (19/05/2026)                  ║
+║                                                                              ║
+║                  Gerenciador de Aplicações Web para Linux                   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+✅ Otimizado para KDE e suporte a Multi-idioma!
+
+📋 NOVIDADES DESTA VERSÃO:
+═══════════════════════════════════════════════════════════════════════════════
+1. Suporte Multi-idioma (I18n)
+   └─ Seletor de Português/Inglês direto na barra de ferramentas.
+   └─ Tradução instantânea dos botões de navegação.
+   └─ Preferência de idioma salva automaticamente.
+
+2. Navegação Aprimorada
+   └─ Botões "Voltar" e "Avançar" adicionados.
+   └─ Atalhos de teclado padrão (Back/Forward/Refresh).
+
+3. Compatibilidade PyQt6 6.7+
+   └─ Correção de importação do QAction (QtGui).
+   └─ Melhor detecção de dependências do sistema.
+
+4. Gerenciador Master (create_app.sh)
+   └─ Menu centralizado para TUDO: Criar, Instalar, Desinstalar e Limpar.
+   └─ Bugs de desinstalação de instâncias corrigidos.
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 COMO USAR RAPIDAMENTE:
+   1. Dê permissão aos scripts:
+      $ chmod +x *.sh
+   2. Abra o Gerenciador Master:
+      $ ./create_app.sh
+   3. Use o menu para instalar a base ou criar novos Apps.
+
+═══════════════════════════════════════════════════════════════════════════════
+🆘 SE O APP NÃO ABRIR (DEPENDÊNCIAS):
+   O PyQt6 WebEngine exige bibliotecas do sistema. Instale-as:
+
+   Ubuntu: sudo apt install python3-pyqt6.qtwebengine
+   Fedora: sudo dnf install python3-qt6-webengine
+   Arch:   sudo pacman -S python-pyqt6-webengine
+
+═══════════════════════════════════════════════════════════════════════════════
+✨ PRINCIPAIS RECURSOS:
+   ✅ Botões Voltar/Avançar/Recarregar.
+   ✅ Seletor de Idioma (PT-BR / EN).
+   ✅ Cada App tem seu próprio ícone e cache isolado.
+   ✅ Integração total com o menu do KDE/GNOME.
+   ✅ Scripts de gerenciamento automatizados.
+
+═══════════════════════════════════════════════════════════════════════════════
+🎉 Comece agora usando o Gerenciador Master:
+   $ ./create_app.sh
+═══════════════════════════════════════════════════════════════════════════════

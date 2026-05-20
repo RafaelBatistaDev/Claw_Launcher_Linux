@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=1.0.2
+Type=Application
+Name=OneNote
+GenericName=Visualizador Web
+Comment=OneNote - Dashboard IA
+Exec=OneNote %U
+Icon=OneNote
+Terminal=false
+Categories=Development;WebBrowser;Utility;
+MimeType=text/html;application/xhtml+xml;
+Keywords=onenote;ai;dashboard;webview;web;viewer;
+StartupWMClass=OneNote
+StartupNotify=true
+X-KDE-StartupNotify=true
+SingleWindow=true
