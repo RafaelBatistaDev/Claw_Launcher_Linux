@@ -350,6 +350,8 @@ install_new_instance() {
     local icon_choice=""
     LAST_CREATED_FOLDER=""
 
+    install_uv_if_missing # Garante que uv esteja instalado antes de tentar sincronizar
+
     if [ ! -f "$icon_src" ] && [ -n "$preferred_icon" ] && [ -f "${SCRIPT_DIR}/ICON/${preferred_icon}.png" ]; then
         icon_src="${SCRIPT_DIR}/ICON/${preferred_icon}.png"
     fi
@@ -391,6 +393,21 @@ install_new_instance() {
     sed -i "s|^APP_ID[[:space:]]*=.*|APP_ID   = \"${app_id}\"|" "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.py"
     sed -i "s|^APP_NAME[[:space:]]*=.*|APP_NAME = \"${raw_name}\"|" "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.py"
     sed -i "s|^URL[[:space:]]*=.*|URL      = \"${url}\"|" "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.py"
+
+    # Gerar pyproject.toml para a instância (Compatibilidade UV Workspace)
+    cat > "${SCRIPT_DIR}/${folder}/pyproject.toml" <<EOF
+[project]
+name = "${app_id,,}"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.uv]
+workspace = { member = true }
+EOF
+
+    step "Sincronizando Workspace com UV (pode demorar na primeira vez)..."
+    uv sync --project "${SCRIPT_DIR}" &>/dev/null
 
     if [ -f "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.desktop" ]; then
         sed -i "s|^Name=.*|Name=${raw_name}|" "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.desktop"
@@ -501,6 +518,7 @@ else
         show_menu
         read -p "Opção: " opt
         case "$opt" in
+            1|2|5) install_uv_if_missing; # Garante que uv esteja presente para operações que usam uv sync
             1) create_preconfigured_app ;;
             2) install_new_instance ;;
             3) uninstall_instance ;;

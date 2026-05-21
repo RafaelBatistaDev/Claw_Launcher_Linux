@@ -1,14 +1,40 @@
 # 🌐 OneNote — Guia Completo
 
-> **Versão:** 1.0.2 | **Compatibilidade:** Universal Linux (XDG) | **Última atualização:** 2026/05/20
+> **Versão:** 1.0.2 | **Tecnologia:** Python + PyQt6 + UV Workspaces | **Última atualização:** 2026/05/21
+
+![Logo do Claw Launcher](ICON/Claw_Launcher.png)
+![Logo do Claw Launcher](ICON/OneNoteapp.png)
 
 **OneNote** é o aplicativo principal do launcher nativo para Linux. Ele usa **PyQt6 WebEngine** para transformar o OneNote em um aplicativo integrado ao seu desktop (KDE, GNOME, XFCE, etc).
 
 ---
 
-![Logo do Claw Launcher](deep-seepapp.png)
-![Logo do Claw Launcher](OneNoteapp.png)
+## ⚡ Modern Stack: UV & Workspaces
+
+O projeto agora utiliza o **[UV](https://github.com/astral-sh/uv)**, o gerenciador de pacotes Python mais rápido do mercado.
+
+### Benefícios:
+* **Instalação Instantânea:** O `uv` sincroniza dependências em milissegundos.
+* **Monorepo (Workspace):** A raiz gerencia as dependências. Cada nova instância (`instance_*`) é automaticamente reconhecida como membro do workspace via globbing.
+* **Isolamento de Sistema Imutável:** Perfeito para **Fedora Kinoite/Silverblue**, pois não interfere no Python do sistema.
+
+### Estrutura do Projeto:
+```text
+ClawProject/
+├── pyproject.toml        # Configuração do Workspace (Raiz)
+├── uv.lock               # Lockfile único (versões consistentes)
+├── instance_Claw_XXX/    # Cada app criado é um "membro" do workspace
+│   ├── pyproject.toml    # Configuração local da instância
+│   └── ...
+└── Claw_Launcher_Linux.py
+```
+
+---
+
 ## 🚀 Novo fluxo de uso
+
+1. **Sincronizar:** `uv sync`
+2. **Gerenciar:** `./create_app.sh`
 
 O projeto agora é centralizado no script `create_app.sh`. Ele cuida do fluxo de instâncias do launcher:
 

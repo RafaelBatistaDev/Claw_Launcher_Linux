@@ -1,0 +1,8 @@
+# Gerado para compatibilidade. 
+# Recomendado usar 'uv sync' para gerenciar via Workspace.
+
+PyQt6>=6.7.0
+PyQt6-WebEngine>=6.7.0
+
+# Para desenvolvimento e linting:
+ruff>=0.4.0

@@ -4,7 +4,7 @@
 Nome do Script  : Claw_Launcher_Linux.py
 Descrição       : Dashboard WebApp nativo KDE com perfil isolado
 Autor           : Rafael Batista
-Versão          : 2.0.0
+Versão          : 1.0.2
 Compatibilidade : Fedora Kinoite / COSMIC (Atomic)
 """
 

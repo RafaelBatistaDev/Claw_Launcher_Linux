@@ -1,12 +1,12 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
-║               🚀 CLAW LAUNCHER LINUX - v1.0.2 (19/05/2026)                  ║
+║               🚀 CLAW LAUNCHER LINUX - v1.0.2 (21/05/2026)                  ║
 ║                                                                              ║
 ║                  Gerenciador de Aplicações Web para Linux                   ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-✅ Otimizado para KDE e suporte a Multi-idioma!
+✅ Agora com UV Workspaces: Performance extrema e isolamento total!
 
 📋 NOVIDADES DESTA VERSÃO:
 ═══════════════════════════════════════════════════════════════════════════════
@@ -25,15 +25,19 @@
 
 4. Gerenciador Master (create_app.sh)
    └─ Menu centralizado para TUDO: Criar, Instalar, Desinstalar e Limpar.
-   └─ Bugs de desinstalação de instâncias corrigidos.
+
+5. Arquitetura Modernizada (UV)
+   └─ Gerenciamento via 'uv' para instalação instantânea.
+   └─ Workspace nativo: um único lockfile para todas as instâncias.
+   └─ Ideal para Fedora Kinoite, Silverblue e Distrobox.
 
 ═══════════════════════════════════════════════════════════════════════════════
 🎯 COMO USAR RAPIDAMENTE:
-   1. Dê permissão aos scripts:
-      $ chmod +x *.sh
-   2. Abra o Gerenciador Master:
-      $ ./create_app.sh
-   3. Use o menu para instalar a base ou criar novos Apps.
+   1. Instale o UV (se não tiver): curl -LsSf https://astral.sh/uv/install.sh | sh
+   2. Sincronize o projeto: uv sync
+   3. Dê permissão e inicie: 
+      $ chmod +x *.sh && ./create_app.sh
+   4. Use o menu para instalar a base ou criar novos Apps.
 
 ═══════════════════════════════════════════════════════════════════════════════
 🆘 SE O APP NÃO ABRIR (DEPENDÊNCIAS):

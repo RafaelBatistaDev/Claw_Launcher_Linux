@@ -3,7 +3,7 @@
 # Script       : manage_instances.sh
 # Descrição    : Gerenciador rápido de instâncias (desinstalar, limpeza, etc)
 # Autor        : Rafael Batista
-# Versão       : 1.0.0
+# Versão       : 1.0.2
 # ──────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
