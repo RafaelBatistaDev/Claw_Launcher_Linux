@@ -336,7 +336,7 @@ install_new_instance() {
         error "URL inválida. Escolha um link válido ou informe uma URL."
         return 1
     fi
-    
+
     save_link_option "$url"
 
     local clean_id=$(echo "$raw_name" | sed 's/[^a-zA-Z0-9]/_/g')
@@ -401,9 +401,6 @@ name = "${app_id,,}"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = []
-
-[tool.uv]
-workspace = { member = true }
 EOF
 
     step "Sincronizando Workspace com UV (pode demorar na primeira vez)..."
