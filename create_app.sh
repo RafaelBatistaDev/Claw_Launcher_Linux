@@ -24,6 +24,14 @@ LAST_CREATED_FOLDER=""
 
 # ── Funções de Auxílio ────────────────────────────────────────────────────────
 
+install_uv_if_missing() {
+    if ! command -v uv &>/dev/null; then
+        step "Instalando uv (gerenciador de pacotes rápido)..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="${REAL_HOME}/.local/bin:${PATH}"
+    fi
+}
+
 get_instances() {
     # Retorna o ID real da instância baseado no nome da pasta (o que vem após 'instance_')
     # Isso garante que pegamos o nome exato para as operações de desinstalação e cache.
@@ -336,7 +344,7 @@ install_new_instance() {
         error "URL inválida. Escolha um link válido ou informe uma URL."
         return 1
     fi
-
+    
     save_link_option "$url"
 
     local clean_id=$(echo "$raw_name" | sed 's/[^a-zA-Z0-9]/_/g')
@@ -404,7 +412,7 @@ dependencies = []
 EOF
 
     step "Sincronizando Workspace com UV (pode demorar na primeira vez)..."
-    uv sync --project "${SCRIPT_DIR}" &>/dev/null
+    uv sync --project "$(dirname "$(readlink -f "$0")")"
 
     if [ -f "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.desktop" ]; then
         sed -i "s|^Name=.*|Name=${raw_name}|" "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.desktop"
@@ -515,13 +523,12 @@ else
         show_menu
         read -p "Opção: " opt
         case "$opt" in
-            1|2|5) install_uv_if_missing; # Garante que uv esteja presente para operações que usam uv sync
-            1) create_preconfigured_app ;;
-            2) install_new_instance ;;
+            1) install_uv_if_missing; create_preconfigured_app ;;
+            2) install_uv_if_missing; install_new_instance ;;
             3) uninstall_instance ;;
             4) list_all ;;
-            5) ./Claw_Launcher_Linux.sh --install ;;
-            6) ./Claw_Launcher_Linux.sh --uninstall ;;
+            5) install_uv_if_missing; bash "$SCRIPT_DIR/Claw_Launcher_Linux.sh" --install ;;
+            6) bash "$SCRIPT_DIR/Claw_Launcher_Linux.sh" --uninstall ;;
             7) clear_cache_menu ;;
             0) exit 0 ;;
             *) warn "Opção inválida" ;;

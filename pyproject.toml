@@ -1,13 +1,10 @@
 [project]
-name = "claw-project"
-version = "1.0.2"
-requires-python = ">=3.9"
+name = "claw-launcher-linux"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
 dependencies = [
-    "PyQt6>=6.7.0",
-    "PyQt6-WebEngine>=6.7.0",
-]
-
-[tool.uv.workspace]
-members = [
-    "instance_*",
+    "pyqt6>=6.11.0",
+    "pyqt6-webengine>=6.11.0",
 ]

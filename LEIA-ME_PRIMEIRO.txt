@@ -39,6 +39,19 @@
       $ chmod +x *.sh && ./create_app.sh
    4. Use o menu para instalar a base ou criar novos Apps.
 
+uv sync
+Using CPython 3.14.4 interpreter at: /usr/bin/python3
+Creating virtual environment at: .venv
+Resolved 12 packages in 2.67s
+Prepared 5 packages in 109m 22s
+Installed 5 packages in 206ms
+ + pyqt6==6.11.0
+ + pyqt6-qt6==6.11.1
+ + pyqt6-sip==13.11.1
+ + pyqt6-webengine==6.11.0
+ + pyqt6-webengine-qt6==6.11.1
+
+
 ═══════════════════════════════════════════════════════════════════════════════
 🆘 SE O APP NÃO ABRIR (DEPENDÊNCIAS):
    O PyQt6 WebEngine exige bibliotecas do sistema. Instale-as:
