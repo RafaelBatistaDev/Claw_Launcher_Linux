@@ -412,7 +412,7 @@ dependencies = []
 EOF
 
     step "Sincronizando Workspace com UV (pode demorar na primeira vez)..."
-    uv sync --project "${SCRIPT_DIR}" &>/dev/null
+    uv sync --project "$(dirname "$(readlink -f "$0")")"
 
     if [ -f "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.desktop" ]; then
         sed -i "s|^Name=.*|Name=${raw_name}|" "${SCRIPT_DIR}/${folder}/Claw_Launcher_Linux.desktop"
@@ -527,8 +527,8 @@ else
             2) install_uv_if_missing; install_new_instance ;;
             3) uninstall_instance ;;
             4) list_all ;;
-            5) install_uv_if_missing; ./Claw_Launcher_Linux.sh --install ;;
-            6) ./Claw_Launcher_Linux.sh --uninstall ;;
+            5) install_uv_if_missing; bash "$SCRIPT_DIR/Claw_Launcher_Linux.sh" --install ;;
+            6) bash "$SCRIPT_DIR/Claw_Launcher_Linux.sh" --uninstall ;;
             7) clear_cache_menu ;;
             0) exit 0 ;;
             *) warn "Opção inválida" ;;
