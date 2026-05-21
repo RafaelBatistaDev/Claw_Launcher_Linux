@@ -71,6 +71,11 @@ purge_instance() {
     # Remover ícones
     find "${ICONS_BASE}" -name "${app_id}.png" -delete 2>/dev/null || true
 
+    # Limpar dados e cache persistentes (nova configuração de isolamento)
+    step "Limpando dados e caches de ${app_id}..."
+    rm -rf "${REAL_HOME}/.local/share/${app_id}" 2>/dev/null || true
+    rm -rf "${REAL_HOME}/.cache/${app_id}" 2>/dev/null || true
+
     # Remover pasta
     rm -rf "$instance_folder"
 
@@ -116,7 +121,7 @@ list_all_instances() {
 
                 # Verificar se está instalada
                 local exec_name=$(grep "^EXEC_NAME" "${instance_dir}/Claw_Launcher_Linux.sh" 2>/dev/null | cut -d'"' -f2)
-                if [ -x "${BIN_DIR}/${exec_name}" ] 2>/dev/null; then
+                if [ -n "${exec_name}" ] && [ -x "${BIN_DIR}/${exec_name}" ]; then
                     installed="✓"
                 fi
 
@@ -143,28 +148,25 @@ list_all_instances() {
 clear_caches() {
     echo ""
     log "=== Limpando Caches de Todas as Instâncias ==="
-    echo ""
+    echo -e "${Y}Isso removerá logins e caches de TODOS os apps Claw/OneNote.${N}\n"
 
-    local cache_dir="${REAL_HOME}/.local/share"
+    local share_base="${REAL_HOME}/.local/share"
+    local cache_base="${REAL_HOME}/.cache"
     local cleaned=0
 
-    # Encontrar e limpar caches Claw
-    for claw_cache in "${cache_dir}"/Claw_*; do
-        if [ -d "$claw_cache" ]; then
-            local cache_name=$(basename "$claw_cache")
-            step "Limpando: ${cache_name}"
-            rm -rf "$claw_cache"
-            ((cleaned++))
-        fi
-    done
+    # Lista de IDs para limpar (OneNote + qualquer pasta começando com Claw_ em share ou cache)
+    local targets=()
+    mapfile -t targets < <( (echo "OneNote"; find "$share_base" "$cache_base" -maxdepth 1 -type d -name "Claw_*" -printf "%f\n" 2>/dev/null) | sort -u)
 
-    # Limpar webengine cache
-    for claw_web in $(find "${cache_dir}" -path "*claw-*/webengine" 2>/dev/null); do
-        if [ -d "$claw_web" ]; then
-            step "Limpando: $claw_web"
-            rm -rf "$claw_web"
-            ((cleaned++))
-        fi
+    for app_id in "${targets[@]}"; do
+        [ -z "$app_id" ] && continue
+        for base in "$share_base" "$cache_base"; do
+            if [ -d "$base/$app_id" ]; then
+                step "Limpando: $base/$app_id"
+                rm -rf "$base/$app_id"
+                ((cleaned++))
+            fi
+        done
     done
 
     if [ $cleaned -eq 0 ]; then
@@ -277,4 +279,3 @@ case "${1:-help}" in
         exit 1
         ;;
 esac
-

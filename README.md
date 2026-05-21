@@ -6,9 +6,8 @@
 
 ---
 
-![Logo do Claw Launcher](deep-seek.png)
-![Logo do Claw Launcher](OneNote.png)
-
+![Logo do Claw Launcher](deep-seepapp.png)
+![Logo do Claw Launcher](OneNoteapp.png)
 ## 🚀 Novo fluxo de uso
 
 O projeto agora é centralizado no script `create_app.sh`. Ele cuida do fluxo de instâncias do launcher:

@@ -19,7 +19,7 @@ step()    { echo -e "${C}[→]${N}       $*"; }
 # ── Configurações ─────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 APP_ID="OneNote"
-EXEC_NAME="OneNote"
+EXEC_NAME="claw-onenote"
 APP_NAME="OneNote"
 
 REAL_HOME="${HOME}"
@@ -150,7 +150,7 @@ ensure_deps() {
 ensure_deps
 exec python3 "$(dirname "$0")/${APP_ID}.py" "$@"
 EOF
-    sed -i "s|\${APP_ID}\.py|${APP_ID}.py|g" "${BIN_DIR}/${EXEC_NAME}"
+    sed -i "s/\${APP_ID}/${APP_ID}/g" "${BIN_DIR}/${EXEC_NAME}"
     chmod +x "${BIN_DIR}/${EXEC_NAME}"
 
     step "Instalando ícones..."

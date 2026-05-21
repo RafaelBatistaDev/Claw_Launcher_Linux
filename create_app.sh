@@ -25,7 +25,11 @@ LAST_CREATED_FOLDER=""
 # ── Funções de Auxílio ────────────────────────────────────────────────────────
 
 get_instances() {
-    find "$SCRIPT_DIR" -maxdepth 1 -type d -name "instance_Claw_*" | sed 's|.*/instance_Claw_||'
+    # Retorna o ID real da instância baseado no nome da pasta (o que vem após 'instance_')
+    # Isso garante que pegamos o nome exato para as operações de desinstalação e cache.
+    find "$SCRIPT_DIR" -maxdepth 1 -type d -name "instance_*" | while read -r dir; do
+        echo "${dir##*/instance_}"
+    done | sort | uniq
 }
 
 generate_unique_app_id() {
@@ -43,18 +47,17 @@ generate_unique_app_id() {
 
 clear_app_cache() {
     local app_id="$1"
-    local cache_dir="${REAL_HOME}/.local/share/${app_id}/cache"
-    local webengine_dir="${REAL_HOME}/.local/share/${app_id}/webengine"
+    local share_dir="${REAL_HOME}/.local/share/${app_id}"
+    local cache_dir="${REAL_HOME}/.cache/${app_id}"
     local removed=0
 
-    if [ -d "$cache_dir" ]; then
-        rm -rf "$cache_dir"
-        removed=1
-    fi
-    if [ -d "$webengine_dir" ]; then
-        rm -rf "$webengine_dir"
-        removed=1
-    fi
+    for d in "$share_dir" "$cache_dir"; do
+        if [ -d "$d" ]; then
+            step "Removendo dados em: $d"
+            rm -rf "$d"
+            removed=1
+        fi
+    done
 
     if [ $removed -eq 1 ]; then
         success "Cache limpo para ${app_id}."
@@ -64,17 +67,21 @@ clear_app_cache() {
 }
 
 select_instance_id() {
-    local options=($(get_instances))
+    local options=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && options+=("$line")
+    done < <(get_instances)
+
     if [ ${#options[@]} -eq 0 ]; then
-        warn "Nenhuma instância criada para limpar cache."
+        warn "Nenhuma instância criada para limpar cache." >&2
         return 1
     fi
 
-    echo -e "${B}Instâncias disponíveis:${N}"
+    echo -e "${B}Instâncias disponíveis:${N}" >&2
     for i in "${!options[@]}"; do
-        printf "  %s) %s\n" "$((i+1))" "${options[i]}"
+        printf "  %s) %s\n" "$((i+1))" "${options[i]}" >&2
     done
-    read -r -p "Escolha a instância para limpar cache: " instance_choice
+    read -r -p "Escolha a instância (número): " instance_choice >&2
 
     if [[ "$instance_choice" =~ ^[0-9]+$ ]] && [ "$instance_choice" -ge 1 ] && [ "$instance_choice" -le ${#options[@]} ]; then
         echo "${options[$((instance_choice-1))]}"
@@ -99,7 +106,7 @@ clear_cache_menu() {
         2)
             local instance_id
             instance_id=$(select_instance_id) || return
-            clear_app_cache "Claw_${instance_id}"
+            clear_app_cache "$instance_id"
             ;;
         *)
             warn "Operação cancelada."
@@ -312,9 +319,9 @@ create_preconfigured_app() {
 # ── Funções Principais ────────────────────────────────────────────────────────
 
 install_new_instance() {
-    local raw_name="$1"
-    local url="$2"
-    local preferred_icon="$3"
+    local raw_name="${1:-}"
+    local url="${2:-}"
+    local preferred_icon="${3:-}"
 
     if [ -z "$raw_name" ]; then
         echo -e "${B}Instalando nova instância...${N}"
@@ -329,7 +336,7 @@ install_new_instance() {
         error "URL inválida. Escolha um link válido ou informe uma URL."
         return 1
     fi
-
+    
     save_link_option "$url"
 
     local clean_id=$(echo "$raw_name" | sed 's/[^a-zA-Z0-9]/_/g')
@@ -402,15 +409,17 @@ install_instance() {
     local name="${1:-}"
     if [ -z "$name" ]; then
         echo -e "${B}Selecione a instância para instalar:${N}"
-        local options=($(get_instances))
+        local options=()
+        while IFS= read -r line; do [ -n "$line" ] && options+=("$line"); done < <(get_instances)
+
         if [ ${#options[@]} -eq 0 ]; then warn "Nenhuma instância criada."; return; fi
         select opt in "${options[@]}" "Cancelar"; do
-            [ "$opt" == "Cancelar" ] && return
+            if [ "$opt" == "Cancelar" ] || [ -z "$opt" ]; then return; fi
             name=$opt; break
         done
     fi
 
-    local folder="${SCRIPT_DIR}/instance_Claw_${name}"
+    local folder="${SCRIPT_DIR}/instance_${name}"
     if [ -d "$folder" ] && [ -x "$folder/Claw_Launcher_Linux.sh" ]; then
         step "Instalando $name..."
         (cd "$folder" && ./Claw_Launcher_Linux.sh --install)
@@ -422,28 +431,32 @@ install_instance() {
 uninstall_instance() {
     local name="${1:-}"
     if [ -z "$name" ]; then
+        local options=()
+        while IFS= read -r line; do
+            [ -n "$line" ] && options+=("$line")
+        done < <(get_instances)
+
         echo -e "${B}Selecione a instância para desinstalar:${N}"
-        local options=($(get_instances))
-        if [ ${#options[@]} -eq 0 ]; then warn "Nenhuma instância encontrada."; return; fi
+        if [ ${#options[@]} -eq 0 ]; then warn "Nenhuma pasta de instância ('instance_*') encontrada."; return; fi
         select opt in "${options[@]}" "Cancelar"; do
-            [ "$opt" == "Cancelar" ] && return
+            if [ "$opt" == "Cancelar" ] || [ -z "$opt" ]; then return; fi
             name=$opt; break
         done
     fi
 
-    local folder="${SCRIPT_DIR}/instance_Claw_${name}"
+    local folder="${SCRIPT_DIR}/instance_${name}"
     if [ -d "$folder" ] && [ -x "$folder/Claw_Launcher_Linux.sh" ]; then
         step "Removendo $name do sistema..."
         (cd "$folder" && ./Claw_Launcher_Linux.sh --uninstall)
-        success "Removido!"
+        success "Desinstalação concluída para $name."
         read -p "Deseja também deletar a pasta de origem? (s/N): " del_folder
         [[ "$del_folder" =~ ^[Ss]$ ]] && rm -rf "$folder" && success "Pasta deletada."
     else
-        # Tenta via manage_instances caso a pasta tenha sido movida
+        # Tenta via manage_instances para uma remoção completa (purge) caso a pasta não exista ou para garantir limpeza
         if [ -f "${SCRIPT_DIR}/manage_instances.sh" ]; then
-            "${SCRIPT_DIR}/manage_instances.sh" purge "Claw_${name}"
+            bash "${SCRIPT_DIR}/manage_instances.sh" purge "${name}"
         else
-            error "Não foi possível localizar a instância."
+            error "Não foi possível localizar a pasta ou o script de gerenciamento: $folder"
         fi
     fi
 }

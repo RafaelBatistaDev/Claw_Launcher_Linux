@@ -1,238 +1,378 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Nome do Script  : OneNote
-Descrição       : Abre dashboard OneNote via PyQt6 WebEngine (Nativo KDE)
+Nome do Script  : Claw_Launcher_Linux.py
+Descrição       : Dashboard WebApp nativo KDE com perfil isolado
 Autor           : Rafael Batista
-Versão          : 1.0.2 (I18n Support)
+Versão          : 2.0.0
+Compatibilidade : Fedora Kinoite / COSMIC (Atomic)
 """
 
-import sys
 import os
+import sys
 import json
 from pathlib import Path
 
-# Configuração de Caminhos
-USER_HOME = Path.home()
-APP_ID   = "OneNote"
-APP_NAME = "OneNote"
-URL      = "https://onenote.cloud.microsoft/pt-br/"
-CONFIG_DIR = USER_HOME / f".local/share/{APP_ID}"
+# Antes do QApplication — flags Chromium para Wayland
+os.environ.setdefault(
+    "QTWEBENGINE_CHROMIUM_FLAGS",
+    "--ozone-platform-hint=auto --enable-features=WaylandWindowDecorations,WebRTCPipeWireCapturer"
+)
+
+USER_HOME   = Path.home()
+APP_ID      = "OneNote"
+APP_NAME    = "OneNote"
+URL         = "https://onenote.cloud.microsoft/pt-br/"
+CONFIG_DIR  = USER_HOME / ".local" / "share" / APP_ID
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
-# 1. Importações com correção para PyQt6 recente
 try:
-    from PyQt6.QtWidgets import QApplication, QMainWindow, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QToolBar, QLabel, QComboBox, QLineEdit
-    from PyQt6.QtGui import QKeySequence, QDesktopServices, QIcon, QAction
+    from PyQt6.QtWidgets import (
+        QApplication, QMainWindow, QToolBar, QLabel,
+        QComboBox, QLineEdit, QProgressBar, QWidget, QSizePolicy
+    )
+    from PyQt6.QtGui import QKeySequence, QIcon, QAction
     from PyQt6.QtWebEngineWidgets import QWebEngineView
-    from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
-    from PyQt6.QtCore import QUrl, QSize, Qt
+    from PyQt6.QtWebEngineCore import (
+        QWebEngineProfile, QWebEnginePage,
+        QWebEngineDownloadRequest, QWebEngineSettings
+    )
+    from PyQt6.QtCore import QUrl, Qt
 except ImportError as e:
     print(f"\n\033[1;31m[ERRO DE DEPENDÊNCIA]\033[0m: {e}")
     sys.exit(1)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TRADUÇÕES E CONFIGURAÇÃO
-# ─────────────────────────────────────────────────────────────────────────────
-
-TRANSLATIONS = {
+# ─────────────────────────────────────────────
+# TRADUÇÕES
+# ─────────────────────────────────────────────
+TRANSLATIONS: dict[str, dict[str, str]] = {
     "pt-br": {
-        "back": "⬅️ Voltar",
-        "forward": "➡️ Avançar",
-        "refresh": "🔄 Recarregar",
-        "lang_label": "Idioma:",
-        "starting": "Iniciando"
+        "back": "⬅ Voltar", "forward": "➡ Avançar",
+        "refresh": "🔄 Recarregar", "home": "🏠 Início",
+        "lang_label": "Idioma:", "starting": "Iniciando",
+        "zoom_in": "🔍+", "zoom_out": "🔍-",
+        "fullscreen": "⛶ Tela Cheia",
+        "loading": "Carregando...", "ready": "Pronto",
+        "download_saved": "📥 Salvo em Downloads",
+        "url_placeholder": "Digite uma URL e pressione Enter",
     },
     "en": {
-        "back": "⬅️ Back",
-        "forward": "➡️ Forward",
-        "refresh": "🔄 Refresh",
-        "lang_label": "Language:",
-        "starting": "Starting"
+        "back": "⬅ Back", "forward": "➡ Forward",
+        "refresh": "🔄 Refresh", "home": "🏠 Home",
+        "lang_label": "Language:", "starting": "Starting",
+        "zoom_in": "🔍+", "zoom_out": "🔍-",
+        "fullscreen": "⛶ Fullscreen",
+        "loading": "Loading...", "ready": "Ready",
+        "download_saved": "📥 Saved to Downloads",
+        "url_placeholder": "Type a URL and press Enter",
     }
 }
 
-def load_config():
+# ─────────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────────
+def load_config() -> dict:
+    """Carrega configuração persistente com fallback seguro."""
     if not CONFIG_FILE.exists():
-        return {"lang": "pt-br"}
+        return {"lang": "pt-br", "zoom": 1.0}
     try:
-        with open(CONFIG_FILE, 'r') as f:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except:
-        return {"lang": "pt-br"}
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"\033[1;33m[AVISO]\033[0m Config corrompida ({e}), usando padrão.")
+        return {"lang": "pt-br", "zoom": 1.0}
 
-def save_config(config):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(config, f)
 
-class CustomWebEnginePage(QWebEnginePage):
-    def createWindow(self, web_window_type):
-        new_view = QWebEngineView()
-        new_page = CustomWebEnginePage(self.profile(), new_view)
-        new_view.setPage(new_page)
-        new_view.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        new_view.resize(900, 700)
-        new_view.show()
-        new_page.urlChanged.connect(lambda url, view=new_view: self.handle_popup_url(url, view))
-        return new_page
-
-    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        if url.isValid() and nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
-            if self.should_open_default_browser(url):
-                QDesktopServices.openUrl(url)
-                return False
-        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
-
-    def handle_popup_url(self, url, view):
-        if not url.isValid():
-            return
-        if self.should_open_default_browser(url):
-            QDesktopServices.openUrl(url)
-            view.close()
-
-    def should_open_default_browser(self, url):
-        host = url.host().lower()
-        if host.endswith("vscode.dev"):
-            return False
-        for allowed in ["login.microsoftonline.com", "microsoftonline.com", "microsoft.com", "github.com", "githubusercontent.com", "visualstudio.com", "visualstudio.microsoft.com"]:
-            if host.endswith(allowed):
-                return False
+def save_config(config: dict) -> bool:
+    """Salva configuração com tratamento de erro."""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
         return True
+    except OSError as e:
+        print(f"\033[1;31m[ERRO]\033[0m Falha ao salvar config: {e}")
+        return False
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# PAGE — popups em janela real
+# ─────────────────────────────────────────────
+class ClawPage(QWebEnginePage):
+    def createWindow(self, _web_window_type) -> QWebEnginePage:
+        popup = QWebEngineView()
+        popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        # Mantém referência para evitar que o Garbage Collector feche a janela
+        if QApplication.activeWindow():
+            popup.setParent(QApplication.activeWindow(), Qt.WindowType.Window)
+        popup.resize(1000, 750)
+        popup.show()
+        return popup.page()
+
+    def acceptNavigationRequest(
+        self, url: QUrl, nav_type, is_main_frame: bool
+    ) -> bool:
+        return True  # Tudo interno — mantém sessão de login
+
+# ─────────────────────────────────────────────
 # JANELA PRINCIPAL
-# ─────────────────────────────────────────────────────────────────────────────
-
+# ─────────────────────────────────────────────
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.config = load_config()
+        self.config       = load_config()
         self.current_lang = self.config.get("lang", "pt-br")
-        self.start_url = self.config.get("last_url", URL)
-        
+        self.start_url    = self.config.get("last_url", URL)
+        self._zoom        = float(self.config.get("zoom", 1.0))
+
         self.setWindowTitle(APP_NAME)
         self.resize(1400, 900)
 
-        # Ícone
         icon_path = USER_HOME / f".local/share/icons/hicolor/256x256/apps/{APP_ID}.png"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
-        # Configuração de Profile (Cookies/Cache)
-        profile = QWebEngineProfile.defaultProfile()
-        storage_dir = USER_HOME / f".local/share/{APP_ID}/webengine"
-        cache_dir = USER_HOME / f".local/share/{APP_ID}/cache"
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        profile.setPersistentStoragePath(str(storage_dir))
-        profile.setCachePath(str(cache_dir))
+        self._setup_profile()
+        self._setup_browser()
+        self._setup_toolbar()
+        self._setup_progress_bar()
+        self._setup_shortcuts()
 
-        # Navegador
+    # ── Perfil isolado ──────────────────────────────
+    def _setup_profile(self) -> None:
+        """Cria perfil isolado com cookies e cache persistentes."""
+        self.profile = QWebEngineProfile(APP_ID, self)
+        storage = CONFIG_DIR / "storage"
+        cache   = CONFIG_DIR / "cache"
+        storage.mkdir(parents=True, exist_ok=True)
+        cache.mkdir(parents=True, exist_ok=True)
+        self.profile.setPersistentStoragePath(str(storage))
+        self.profile.setCachePath(str(cache))
+        self.profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
+        )
+        # User-Agent Firefox — evita bloqueios por "bot"
+        self.profile.setHttpUserAgent(
+            "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+        )
+        # ✅ NOVO: handler de downloads
+        self.profile.downloadRequested.connect(self._handle_download)
+
+    # ── Browser ─────────────────────────────────────
+    def _setup_browser(self) -> None:
         self.browser = QWebEngineView()
-        self.browser.setPage(CustomWebEnginePage(profile, self.browser))
+        self.browser.setPage(ClawPage(self.profile, self.browser))
+
+        # ✅ Libera acesso ao clipboard
+        settings = self.browser.settings()
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True
+        )
+        # Verifica se o atributo existe para evitar crash em versões antigas do PyQt6
+        if hasattr(QWebEngineSettings.WebAttribute, "JavascriptCanPasteFromClipboard"):
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.JavascriptCanPasteFromClipboard, True
+            )
+
         self.browser.setUrl(QUrl(self.start_url))
-        self.browser.urlChanged.connect(self.update_url_bar)
-        self.browser.loadFinished.connect(self.on_load_finished)
+        self.browser.setZoomFactor(self._zoom)
+        self.browser.urlChanged.connect(self._update_url_bar)
+        self.browser.loadStarted.connect(self._on_load_started)
+        self.browser.loadFinished.connect(self._on_load_finished)
         self.setCentralWidget(self.browser)
 
-        # Barra de Ferramentas
+    # ── Toolbar ─────────────────────────────────────
+    def _setup_toolbar(self) -> None:
         self.toolbar = QToolBar()
+        self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
-        self.setup_toolbar()
+        self._build_toolbar()
 
-    def setup_toolbar(self):
-        self.toolbar.clear()
-        texts = TRANSLATIONS[self.current_lang]
+    def _build_toolbar(self) -> None:
+        """Constrói toolbar — chamado 1x e atualizado por _update_toolbar_texts()."""
+        t = TRANSLATIONS[self.current_lang]
+        tb = self.toolbar
+        tb.clear()
 
-        # Botão Voltar
-        self.back_action = QAction(texts["back"], self)
-        self.back_action.setShortcut(QKeySequence.StandardKey.Back)
-        self.back_action.triggered.connect(self.browser.back)
-        self.toolbar.addAction(self.back_action)
+        self._act_back    = QAction(t["back"], self)
+        self._act_forward = QAction(t["forward"], self)
+        self._act_refresh = QAction(t["refresh"], self)
+        self._act_home    = QAction(t["home"], self)      # ✅ NOVO
+        self._act_zoomin  = QAction(t["zoom_in"], self)   # ✅ NOVO
+        self._act_zoomout = QAction(t["zoom_out"], self)  # ✅ NOVO
 
-        # Botão Avançar
-        self.forward_action = QAction(texts["forward"], self)
-        self.forward_action.setShortcut(QKeySequence.StandardKey.Forward)
-        self.forward_action.triggered.connect(self.browser.forward)
-        self.toolbar.addAction(self.forward_action)
+        self._act_back.setShortcut(QKeySequence.StandardKey.Back)
+        self._act_forward.setShortcut(QKeySequence.StandardKey.Forward)
+        self._act_refresh.setShortcut(QKeySequence.StandardKey.Refresh)
 
-        # Botão Recarregar
-        self.refresh_action = QAction(texts["refresh"], self)
-        self.refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)
-        self.refresh_action.triggered.connect(self.browser.reload)
-        self.toolbar.addAction(self.refresh_action)
+        self._act_back.triggered.connect(self.browser.back)
+        self._act_forward.triggered.connect(self.browser.forward)
+        self._act_refresh.triggered.connect(self.browser.reload)
+        self._act_home.triggered.connect(lambda: self.browser.setUrl(QUrl(URL)))
+        self._act_zoomin.triggered.connect(self._zoom_in)
+        self._act_zoomout.triggered.connect(self._zoom_out)
 
-        self.toolbar.addSeparator()
+        for act in (self._act_back, self._act_forward,
+                    self._act_refresh, self._act_home):
+            tb.addAction(act)
 
-        # Barra de navegação
+        tb.addSeparator()
+
         self.url_bar = QLineEdit()
-        self.url_bar.setPlaceholderText("Digite uma URL e pressione Enter")
-        self.url_bar.returnPressed.connect(self.navigate_to_url)
+        self.url_bar.setPlaceholderText(t["url_placeholder"])
+        self.url_bar.returnPressed.connect(self._navigate_to_url)
         self.url_bar.setText(self.browser.url().toString())
-        self.toolbar.addWidget(self.url_bar)
+        self.url_bar.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        tb.addWidget(self.url_bar)
 
-        self.toolbar.addSeparator()
+        tb.addSeparator()
+        tb.addAction(self._act_zoomin)
+        tb.addAction(self._act_zoomout)
+        tb.addSeparator()
 
-        # Seletor de Idioma
-        lang_container = QHBoxLayout()
-        self.lang_label = QLabel(texts["lang_label"])
-        self.toolbar.addWidget(self.lang_label)
-        
-        self.lang_combo = QComboBox()
-        self.lang_combo.addItem("Português", "pt-br")
-        self.lang_combo.addItem("English", "en")
-        
-        # Define o index atual com base na config
-        index = self.lang_combo.findData(self.current_lang)
-        if index >= 0:
-            self.lang_combo.setCurrentIndex(index)
-            
-        self.lang_combo.currentIndexChanged.connect(self.change_language)
-        self.toolbar.addWidget(self.lang_combo)
+        self._lang_label = QLabel(t["lang_label"])
+        tb.addWidget(self._lang_label)
 
-    def change_language(self):
-        new_lang = self.lang_combo.currentData()
-        if new_lang != self.current_lang:
-            self.current_lang = new_lang
-            self.config["lang"] = new_lang
-            save_config(self.config)
-            self.setup_toolbar()
+        self._lang_combo = QComboBox()
+        self._lang_combo.addItem("Português", "pt-br")
+        self._lang_combo.addItem("English", "en")
+        idx = self._lang_combo.findData(self.current_lang)
+        if idx >= 0:
+            self._lang_combo.setCurrentIndex(idx)
+        self._lang_combo.currentIndexChanged.connect(self._change_language)
+        tb.addWidget(self._lang_combo)
 
-    def navigate_to_url(self):
+    def _update_toolbar_texts(self) -> None:
+        """✅ Atualiza textos sem reconstruir toolbar inteira."""
+        t = TRANSLATIONS[self.current_lang]
+        self._act_back.setText(t["back"])
+        self._act_forward.setText(t["forward"])
+        self._act_refresh.setText(t["refresh"])
+        self._act_home.setText(t["home"])
+        self._act_zoomin.setText(t["zoom_in"])
+        self._act_zoomout.setText(t["zoom_out"])
+        self._lang_label.setText(t["lang_label"])
+        self.url_bar.setPlaceholderText(t["url_placeholder"])
+
+    # ── Barra de progresso ──────────────────────────
+    def _setup_progress_bar(self) -> None:
+        """✅ NOVO: barra de progresso de carregamento."""
+        self.progress = QProgressBar()
+        self.progress.setMaximumHeight(3)
+        self.progress.setTextVisible(False)
+        self.progress.setRange(0, 100)
+        self.progress.hide()
+        self.statusBar().addPermanentWidget(self.progress, 1)
+        self.browser.loadProgress.connect(self._on_load_progress)
+
+    # ── Shortcuts ───────────────────────────────────
+    def _setup_shortcuts(self) -> None:
+        """✅ NOVO: atalhos de teclado extras."""
+        from PyQt6.QtGui import QShortcut
+        QShortcut(QKeySequence("Ctrl++"),    self, self._zoom_in)
+        QShortcut(QKeySequence("Ctrl+-"),    self, self._zoom_out)
+        QShortcut(QKeySequence("Ctrl+0"),    self, self._zoom_reset)
+        QShortcut(QKeySequence("F11"),       self, self._toggle_fullscreen)
+        QShortcut(QKeySequence("F5"),        self, self.browser.reload)
+        QShortcut(QKeySequence("Ctrl+R"),    self, self.browser.reload)
+        QShortcut(QKeySequence("Alt+Home"),  self,
+                  lambda: self.browser.setUrl(QUrl(URL)))
+
+    # ── Slots ────────────────────────────────────────
+    def _navigate_to_url(self) -> None:
         url = self.url_bar.text().strip()
         if not url:
             return
-        if not QUrl(url).scheme():
+        if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
         self.browser.setUrl(QUrl(url))
 
-    def update_url_bar(self, url):
+    def _update_url_bar(self, url: QUrl) -> None:
         self.url_bar.setText(url.toString())
 
-    def on_load_finished(self, ok):
+    def _on_load_started(self) -> None:
+        self.progress.show()
+        self.progress.setValue(0)
+        self.statusBar().showMessage(TRANSLATIONS[self.current_lang]["loading"])
+
+    def _on_load_progress(self, value: int) -> None:
+        self.progress.setValue(value)
+
+    def _on_load_finished(self, ok: bool) -> None:
+        self.progress.hide()
         if ok:
             self.config["last_url"] = self.browser.url().toString()
             save_config(self.config)
+            self.statusBar().showMessage(
+                TRANSLATIONS[self.current_lang]["ready"], 3000
+            )
 
-    def closeEvent(self, event):
+    def _change_language(self) -> None:
+        new_lang = self._lang_combo.currentData()
+        if new_lang and new_lang != self.current_lang:
+            self.current_lang = new_lang
+            self.config["lang"] = new_lang
+            save_config(self.config)
+            self._update_toolbar_texts()   # ✅ só atualiza textos
+
+    def _zoom_in(self) -> None:
+        self._zoom = min(self._zoom + 0.1, 3.0)
+        self._apply_zoom()
+
+    def _zoom_out(self) -> None:
+        self._zoom = max(self._zoom - 0.1, 0.3)
+        self._apply_zoom()
+
+    def _zoom_reset(self) -> None:
+        self._zoom = 1.0
+        self._apply_zoom()
+
+    def _apply_zoom(self) -> None:
+        self.browser.setZoomFactor(self._zoom)
+        self.config["zoom"] = round(self._zoom, 1)
+        save_config(self.config)
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def _handle_download(self, download: QWebEngineDownloadRequest) -> None:
+        """✅ NOVO: salva downloads em ~/Downloads automaticamente."""
+        downloads_dir = USER_HOME / "Downloads"
+        downloads_dir.mkdir(exist_ok=True)
+        dest = downloads_dir / download.suggestedFileName()
+        download.setDownloadDirectory(str(downloads_dir))
+        download.setDownloadFileName(dest.name)
+        download.accept()
+        self.statusBar().showMessage(
+            f"{TRANSLATIONS[self.current_lang]['download_saved']}: {dest.name}", 5000
+        )
+
+    def closeEvent(self, event) -> None:
         self.config["last_url"] = self.browser.url().toString()
+        self.config["zoom"]     = round(self._zoom, 1)
         save_config(self.config)
         super().closeEvent(event)
 
-def main():
+
+# ─────────────────────────────────────────────
+# ENTRY POINT
+# ─────────────────────────────────────────────
+def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_ID)
     app.setApplicationDisplayName(APP_NAME)
     app.setDesktopFileName(APP_ID)
 
     window = MainWindow()
-    
-    lang_info = TRANSLATIONS[window.current_lang]["starting"]
-    print(f"\033[1;32m[OK]\033[0m {lang_info} {APP_NAME}...")
-
+    t = TRANSLATIONS[window.current_lang]
+    print(f"\033[1;32m[OK]\033[0m {t['starting']} {APP_NAME}...")
     window.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
