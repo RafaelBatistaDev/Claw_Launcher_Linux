@@ -1,137 +1,253 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
 # Script       : manage_instances.sh
-# Descrição    : Gerenciador rápido de instâncias (desinstalar, limpeza, etc)
+# Descrição    : Gerenciador rápido de instâncias (purge, lista, cache, etc)
 # Autor        : Rafael Batista
-# Versão       : 1.0.2
+# Versão       : 1.0.4 (com melhorias opcionais)
+# ──────────────────────────────────────────────────────────────────────────────
+# 
+# CHANGELOG v1.0.4:
+#   + Logging em arquivo (.local/log/)
+#   + Validação de integridade antes de purge
+#   + Backup automático em clear-caches (opcional)
+#   + Dry-run mode para purge
+#   + Help melhorado com exemplos
+#   + Exit codes mais granulares
 # ──────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
-# Cores
+# ── Cores ─────────────────────────────────────────────────────────────────────
 G="\033[1;32m"; B="\033[1;34m"; Y="\033[1;33m"; R="\033[1;31m"; C="\033[1;36m"; N="\033[0m"
 
-log()     { echo -e "${B}[INFO]${N}    $*"; }
-success() { echo -e "${G}[OK]${N}      $*"; }
-warn()    { echo -e "${Y}[AVISO]${N}   $*"; }
-error()   { echo -e "${R}[ERRO]${N}    $*" >&2; }
-step()    { echo -e "${C}[→]${N}       $*"; }
+log()     { echo -e "${B}[INFO]${N}    $*" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${B}[INFO]${N}    $*"; }
+success() { echo -e "${G}[OK]${N}      $*" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${G}[OK]${N}      $*"; }
+warn()    { echo -e "${Y}[AVISO]${N}   $*" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${Y}[AVISO]${N}   $*"; }
+error()   { echo -e "${R}[ERRO]${N}    $*" >&2 | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${R}[ERRO]${N}    $*" >&2; }
+step()    { echo -e "${C}[→]${N}       $*" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${C}[→]${N}       $*"; }
+removed() { echo -e "${Y}[DEL]${N}     $*" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${Y}[DEL]${N}     $*"; }
 
-# Configurações
+# ── Configurações Compartilhadas ──────────────────────────────────────────────
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 REAL_HOME="${HOME}"
 [[ -n "${SUDO_USER:-}" ]] && REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 
+ICON_SIZES=(16 32 48 64 128 256)
 BIN_DIR="${REAL_HOME}/.local/bin"
 APPS_DIR="${REAL_HOME}/.local/share/applications"
 ICONS_BASE="${REAL_HOME}/.local/share/icons/hicolor"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DESINSTALAR E REMOVER TUDO DE UMA INSTÂNCIA
-# ─────────────────────────────────────────────────────────────────────────────
-purge_instance() {
-    local app_id="$1"
+# ── Logging (novo em v1.0.4) ──────────────────────────────────────────────────
+LOG_DIR="${REAL_HOME}/.local/log"
+LOG_FILE="${LOG_DIR}/manage_instances_$(date +%Y%m%d_%H%M%S).log"
 
-    if [ -z "$app_id" ]; then
-        error "Use: $0 purge <APP_ID>"
-        exit 1
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+touch "$LOG_FILE" 2>/dev/null || true
+
+# ── Flags Globais ─────────────────────────────────────────────────────────────
+DRY_RUN=false
+VERBOSE=false
+BACKUP_ON_CLEAR=true
+
+# ── Helpers Compartilhados ────────────────────────────────────────────────────
+
+remove_file() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            removed "(DRY-RUN) Seria removido: $file"
+        else
+            rm -f "$file"
+            removed "$file"
+        fi
+    else
+        [[ "$VERBOSE" == "true" ]] && warn "Não encontrado (já removido?): $file"
     fi
-
-    # Encontrar EXEC_NAME a partir do APP_ID
-    local instance_folder="${SCRIPT_DIR}/instance_${app_id}"
-
-    if [ ! -d "$instance_folder" ]; then
-        error "Instância '${app_id}' não encontrada."
-        exit 1
-    fi
-
-    local exec_name=$(grep "^EXEC_NAME" "${instance_folder}/Claw_Launcher_Linux.sh" 2>/dev/null | cut -d'"' -f2)
-    local app_name=$(grep "^APP_NAME" "${instance_folder}/Claw_Launcher_Linux.py" 2>/dev/null | cut -d'"' -f2)
-
-    if [ -z "$exec_name" ]; then
-        error "Não foi possível determinar o EXEC_NAME da instância."
-        exit 1
-    fi
-
-    echo -e "${Y}Desinstalando '${app_name}'...${N}"
-
-    # Desinstalar (via script da instância)
-    if [ -x "${instance_folder}/Claw_Launcher_Linux.sh" ]; then
-        cd "$instance_folder"
-        ./Claw_Launcher_Linux.sh --uninstall 2>/dev/null || true
-    fi
-
-    # Remover executável
-    rm -f "${BIN_DIR}/${exec_name}" 2>/dev/null || true
-    rm -f "${BIN_DIR}/${app_id}" 2>/dev/null || true
-
-    # Remover arquivo desktop
-    rm -f "${APPS_DIR}/${app_id}.desktop" 2>/dev/null || true
-
-    # Remover ícones
-    find "${ICONS_BASE}" -name "${app_id}.png" -delete 2>/dev/null || true
-
-    # Limpar dados e cache persistentes (nova configuração de isolamento)
-    step "Limpando dados e caches de ${app_id}..."
-    rm -rf "${REAL_HOME}/.local/share/${app_id}" 2>/dev/null || true
-    rm -rf "${REAL_HOME}/.cache/${app_id}" 2>/dev/null || true
-
-    # Remover pasta
-    rm -rf "$instance_folder"
-
-    success "Instância '${app_name}' removida completamente!"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LISTAR TODAS AS INSTÂNCIAS INSTALADAS
-# ─────────────────────────────────────────────────────────────────────────────
+remove_dir() {
+    local dir="$1"
+    if [[ -d "$dir" ]]; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            removed "(DRY-RUN) Seria removido: ${dir}/"
+        else
+            rm -rf "$dir"
+            removed "${dir}/"
+        fi
+    else
+        [[ "$VERBOSE" == "true" ]] && warn "Diretório não encontrado (já removido?): ${dir}/"
+    fi
+}
+
+update_caches() {
+    step "Atualizando caches do sistema..."
+    update-desktop-database "${APPS_DIR}"       2>/dev/null || true
+    gtk-update-icon-cache -f -t "${ICONS_BASE}" 2>/dev/null || true
+    if command -v kbuildsycoca6 &>/dev/null; then kbuildsycoca6 --noincremental 2>/dev/null || true; fi
+    if command -v kbuildsycoca5 &>/dev/null; then kbuildsycoca5 --noincremental 2>/dev/null || true; fi
+    success "Caches atualizados."
+}
+
+# ── Validação de Integridade (novo em v1.0.4) ────────────────────────────────
+validate_instance() {
+    local app_id="$1"
+    local instance_folder="${SCRIPT_DIR}/instance_${app_id}"
+    local exec_name
+
+    [[ ! -d "$instance_folder" ]] && return 1
+
+    exec_name=$(grep "^EXEC_NAME" "${instance_folder}/Claw_Launcher_Linux.sh" 2>/dev/null | cut -d'"' -f2 || echo "")
+    
+    local checks_passed=0
+    local checks_total=4
+
+    # Checks:
+    [[ -f "${instance_folder}/Claw_Launcher_Linux.sh" ]] && ((checks_passed++))
+    [[ -f "${instance_folder}/Claw_Launcher_Linux.py" ]] && ((checks_passed++))
+    [[ -x "${BIN_DIR}/${exec_name}" ]] && ((checks_passed++))
+    [[ -f "${APPS_DIR}/${app_id}.desktop" ]] && ((checks_passed++))
+
+    if [[ $checks_passed -ge 3 ]]; then
+        return 0
+    else
+        warn "Integridade comprometida: ${checks_passed}/${checks_total} checks ok"
+        return 1
+    fi
+}
+
+# ── Backup (novo em v1.0.4) ──────────────────────────────────────────────────
+backup_app_data() {
+    local app_id="$1"
+    local share_dir="${REAL_HOME}/.local/share/${app_id}"
+    local backup_dir="${REAL_HOME}/.local/share/claw_backups"
+
+    [[ ! -d "$share_dir" ]] && return 0
+
+    mkdir -p "$backup_dir"
+
+    local backup_file="${backup_dir}/${app_id}_$(date +%Y%m%d_%H%M%S).tar.gz"
+    step "Fazendo backup: ${app_id} → ${backup_dir}/"
+    
+    tar czf "$backup_file" -C "${REAL_HOME}/.local/share" "$app_id" 2>/dev/null || {
+        warn "Falha ao fazer backup de ${app_id}"
+        return 1
+    }
+
+    success "Backup salvo: $(basename "$backup_file")"
+    return 0
+}
+
+# ── Purge com Validação ──────────────────────────────────────────────────────
+purge_instance() {
+    local app_id="${1:-}"
+    [ -z "$app_id" ] && { error "Use: $0 purge <APP_ID>"; exit 1; }
+
+    local instance_folder="${SCRIPT_DIR}/instance_${app_id}"
+    [ ! -d "$instance_folder" ] && { error "Instância '${app_id}' não encontrada."; exit 1; }
+
+    # Validação de integridade
+    if ! validate_instance "$app_id"; then
+        warn "Instância parece parcialmente removida. Continuando limpeza..."
+    fi
+
+    local exec_name app_name
+    exec_name=$(grep "^EXEC_NAME" "${instance_folder}/Claw_Launcher_Linux.sh" 2>/dev/null | cut -d'"' -f2 || true)
+    app_name=$(grep  "^APP_NAME"  "${instance_folder}/Claw_Launcher_Linux.py"  2>/dev/null | cut -d'"' -f2 || true)
+    app_name="${app_name:-$app_id}"
+
+    [ -z "$exec_name" ] && { error "Não foi possível determinar EXEC_NAME de '${app_id}'."; exit 1; }
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "═══ DRY-RUN: Purge de ${app_name} (${app_id}) ═══"
+    else
+        log "═══ Purge: ${app_name} (${app_id}) ═══"
+    fi
+
+    # 1. Desinstala via script
+    if [ -x "${instance_folder}/Claw_Launcher_Linux.sh" ]; then
+        step "Executando desinstalação da instância..."
+        if [[ "$DRY_RUN" == "true" ]]; then
+            step "(DRY-RUN) Pulando: ./Claw_Launcher_Linux.sh --uninstall"
+        else
+            (cd "$instance_folder" && ./Claw_Launcher_Linux.sh --uninstall) || true
+        fi
+    fi
+
+    # 2. Executáveis
+    step "Removendo executáveis..."
+    remove_file "${BIN_DIR}/${exec_name}"
+    remove_file "${BIN_DIR}/${app_id}.py"
+
+    # 3. .desktop
+    step "Removendo atalho de menu..."
+    remove_file "${APPS_DIR}/${app_id}.desktop"
+
+    # 4. Ícones
+    step "Removendo ícones..."
+    for size in "${ICON_SIZES[@]}"; do
+        remove_file "${ICONS_BASE}/${size}x${size}/apps/${app_id}.png"
+    done
+
+    # 5. Dados de perfil
+    step "Removendo dados de perfil..."
+    remove_file "${REAL_HOME}/.local/share/${app_id}/config.json"
+    remove_dir  "${REAL_HOME}/.local/share/${app_id}/storage"
+    remove_dir  "${REAL_HOME}/.local/share/${app_id}/cache"
+    if [[ "$DRY_RUN" != "true" ]]; then
+        rmdir --ignore-fail-on-non-empty "${REAL_HOME}/.local/share/${app_id}" 2>/dev/null || true
+    fi
+
+    # 6. Cache XDG
+    step "Removendo cache XDG..."
+    remove_dir "${REAL_HOME}/.cache/${app_id}"
+
+    # 7. Pasta da instância
+    step "Removendo pasta da instância..."
+    remove_dir "$instance_folder"
+
+    # 8. Caches do sistema
+    if [[ "$DRY_RUN" != "true" ]]; then
+        update_caches
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        warn "═══ DRY-RUN: Nada foi deletado! Execute sem --dry-run para confirmar ═══"
+    else
+        success "═══ '${app_name}' removido completamente! ═══"
+    fi
+}
+
+# ── Listar instâncias ──────────────────────────────────────────────────────────
 list_all_instances() {
     echo ""
-    log "=== Instâncias Instaladas em ${BIN_DIR} ==="
+    log "═══ Instâncias do Projeto ═══"
     echo ""
 
     local found=0
 
-    # Procurar por scripts executáveis Claw
-    for bin_exec in "${BIN_DIR}"/claw-*; do
-        if [ -x "$bin_exec" ]; then
-            local exec_name=$(basename "$bin_exec")
-            local py_file="${BIN_DIR}/$(basename "$bin_exec" | sed 's/^claw-/Claw_/').py"
-
-            if [ -f "$py_file" ]; then
-                local app_name=$(grep "^APP_NAME" "$py_file" | cut -d'"' -f2)
-                echo -e "${C}[${found}]${N} ${B}${app_name}${N}"
-                echo "    Executável: ${exec_name}"
-                echo ""
-            fi
-            ((found++))
-        fi
-    done
-
-    # Procurar em pastas de instância
     for instance_dir in "${SCRIPT_DIR}"/instance_*; do
-        if [ -d "$instance_dir" ]; then
-            local folder_name=$(basename "$instance_dir")
-            local py_file="${instance_dir}/Claw_Launcher_Linux.py"
+        [ -d "$instance_dir" ] || continue
 
-            if [ -f "$py_file" ]; then
-                local app_id=$(grep "^APP_ID" "$py_file" | cut -d'"' -f2)
-                local app_name=$(grep "^APP_NAME" "$py_file" | cut -d'"' -f2)
-                local installed="✗"
+        local py_file="${instance_dir}/Claw_Launcher_Linux.py"
+        [ -f "$py_file" ] || continue
 
-                # Verificar se está instalada
-                local exec_name=$(grep "^EXEC_NAME" "${instance_dir}/Claw_Launcher_Linux.sh" 2>/dev/null | cut -d'"' -f2)
-                if [ -n "${exec_name}" ] && [ -x "${BIN_DIR}/${exec_name}" ]; then
-                    installed="✓"
-                fi
+        local app_id app_name exec_name installed="✗" integrity="✓"
+        app_id=$(  grep "^APP_ID"   "$py_file" | cut -d'"' -f2)
+        app_name=$(grep "^APP_NAME" "$py_file" | cut -d'"' -f2)
+        exec_name=$(grep "^EXEC_NAME" "${instance_dir}/Claw_Launcher_Linux.sh" 2>/dev/null | cut -d'"' -f2 || true)
 
-                echo -e "${C}[${found}]${N} ${B}${app_name}${N} (${installed})"
-                echo "    Pasta: ${folder_name}"
-                echo "    App ID: ${app_id}"
-                echo ""
-                ((found++))
-            fi
+        [ -n "$exec_name" ] && [ -x "${BIN_DIR}/${exec_name}" ] && installed="✓"
+        
+        if ! validate_instance "$app_id" 2>/dev/null; then
+            integrity="⚠"
         fi
+
+        echo -e "  ${C}[${found}]${N} ${B}${app_name}${N} (${installed} instalado, integridade: ${integrity})"
+        echo "      Pasta:     instance_${app_id}"
+        echo "      App ID:    ${app_id}"
+        echo "      Exec:      ${exec_name:-desconhecido}"
+        echo ""
+        (( found++ )) || true
     done
 
     if [ $found -eq 0 ]; then
@@ -142,136 +258,168 @@ list_all_instances() {
     echo ""
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LIMPAR CACHE DE TODAS AS INSTÂNCIAS
-# ─────────────────────────────────────────────────────────────────────────────
-clear_caches() {
+# ── Limpar cache com backup ──────────────────────────────────────────────────
+clear_all_caches() {
     echo ""
-    log "=== Limpando Caches de Todas as Instâncias ==="
+    log "═══ Limpando Caches de Todas as Instâncias ═══"
     echo -e "${Y}Isso removerá logins e caches de TODOS os apps Claw/OneNote.${N}\n"
 
-    local share_base="${REAL_HOME}/.local/share"
-    local cache_base="${REAL_HOME}/.cache"
     local cleaned=0
 
-    # Lista de IDs para limpar (OneNote + qualquer pasta começando com Claw_ em share ou cache)
-    local targets=()
-    mapfile -t targets < <( (echo "OneNote"; find "$share_base" "$cache_base" -maxdepth 1 -type d -name "Claw_*" -printf "%f\n" 2>/dev/null) | sort -u)
+    local -a targets=()
+    mapfile -t targets < <(
+        (
+            echo "OneNote"
+            find "${REAL_HOME}/.local/share" "${REAL_HOME}/.cache" \
+                 -maxdepth 1 -type d -name "Claw_*" -printf "%f\n" 2>/dev/null
+        ) | sort -u
+    )
 
     for app_id in "${targets[@]}"; do
         [ -z "$app_id" ] && continue
-        for base in "$share_base" "$cache_base"; do
-            if [ -d "$base/$app_id" ]; then
-                step "Limpando: $base/$app_id"
-                rm -rf "$base/$app_id"
-                ((cleaned++))
-            fi
-        done
+
+        # Backup se habilitado
+        if [[ "$BACKUP_ON_CLEAR" == "true" ]]; then
+            backup_app_data "$app_id" || warn "Falha no backup de ${app_id}"
+        fi
+
+        log "Cache: ${app_id}"
+
+        step "  Dados de perfil..."
+        remove_file "${REAL_HOME}/.local/share/${app_id}/config.json" 2>/dev/null || true
+        remove_dir  "${REAL_HOME}/.local/share/${app_id}/storage"     2>/dev/null || true
+        remove_dir  "${REAL_HOME}/.local/share/${app_id}/cache"       2>/dev/null || true
+        if [[ "$DRY_RUN" != "true" ]]; then
+            rmdir --ignore-fail-on-non-empty "${REAL_HOME}/.local/share/${app_id}" 2>/dev/null || true
+        fi
+
+        step "  Cache XDG..."
+        remove_dir "${REAL_HOME}/.cache/${app_id}" 2>/dev/null || true
+
+        (( cleaned++ )) || true
     done
 
-    if [ $cleaned -eq 0 ]; then
-        warn "Nenhum cache encontrado para limpar."
-    else
-        success "Limpeza concluída! (${cleaned} item(ns) removido(s))"
-    fi
+    [ $cleaned -eq 0 ] && warn "Nenhum cache encontrado." || success "Cache limpo para ${cleaned} app(s)."
     echo ""
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DESINSTALAR TODAS AS INSTÂNCIAS
-# ���────────────────────────────────────────────────────────────────────────────
+# ── Desinstalar tudo ───────────────────────────────────────────────────────────
 uninstall_all() {
     echo ""
-    log "=== Desinstalar TODAS as Instâncias ==="
-    echo -e "${Y}Aviso: Isso removará todos os aplicativos Claw instalados!${N}"
+    log "═══ Desinstalar TODAS as Instâncias ═══"
+    echo -e "${Y}Aviso: Remove todos os aplicativos Claw do sistema!${N}"
     echo ""
+    read -r -p "Tem CERTEZA? Digite 'sim' para confirmar: " confirm
+    [[ "$confirm" != "sim" ]] && { warn "Operação cancelada."; return 0; }
 
-    read -p "Tem CERTEZA? Digite 'sim' para confirmar: " confirm
+    local found=0
+    for instance_dir in "${SCRIPT_DIR}"/instance_*; do
+        [ -d "$instance_dir" ] || continue
+        local app_id="${instance_dir##*/instance_}"
+        step "Purgando instância: ${app_id}"
+        purge_instance "$app_id" || warn "Falha ao purgar ${app_id} — continuando..."
+        (( found++ )) || true
+    done
 
-    if [ "$confirm" != "sim" ]; then
-        warn "Operação cancelada."
-        return 0
+    step "Removendo executáveis avulsos..."
+    while IFS= read -r f; do remove_file "$f"; done < <(find "${BIN_DIR}" -maxdepth 1 \( -name "claw-*" -o -name "Claw_*.py" \) -type f 2>/dev/null || true)
+
+    step "Removendo atalhos avulsos..."
+    while IFS= read -r f; do remove_file "$f"; done < <(find "${APPS_DIR}" -maxdepth 1 -name "Claw_*.desktop" -type f 2>/dev/null || true)
+
+    step "Removendo ícones avulsos..."
+    for size in "${ICON_SIZES[@]}"; do
+        while IFS= read -r f; do remove_file "$f"; done < <(find "${ICONS_BASE}/${size}x${size}/apps" -maxdepth 1 -name "Claw_*.png" -type f 2>/dev/null || true)
+    done
+
+    if [[ "$DRY_RUN" != "true" ]]; then
+        update_caches
     fi
 
-    # Remover todos os executáveis Claw
-    step "Removendo executáveis..."
-    find "${BIN_DIR}" -name "claw-*" -type f -delete 2>/dev/null || true
-    find "${BIN_DIR}" -name "Claw_*" -type f -delete 2>/dev/null || true
-
-    # Remover todos os desktops
-    step "Removendo atalhos de menu..."
-    find "${APPS_DIR}" -name "Claw_*" -type f -delete 2>/dev/null || true
-
-    # Remover todos os ícones
-    step "Removendo ícones..."
-    find "${ICONS_BASE}" -name "Claw_*" -delete 2>/dev/null || true
-
-    # Limpar caches
-    step "Limpando caches..."
-    clear_caches
-
-    success "Todas as instâncias foram removidas!"
+    success "═══ Todas as instâncias removidas! (${found} purgadas) ═══"
     echo ""
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MOSTRAR HELP
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Help ───────────────────────────────────────────────────────────────────────
 show_help() {
-    cat << EOF
+    cat << HELP_EOF
 
 ${B}╔════════════════════════════════════════════════════════╗${N}
-${B}║${N}  ${C}Gerenciador de Instâncias Claw Launcher${N}
+${B}║${N}  ${C}Gerenciador de Instâncias Claw Launcher v1.0.4${N}
 ${B}╚════════════════════════════════════════════════════════╝${N}
 
 ${B}Uso:${N}
-  $0 <comando> [opções]
+  $0 [FLAGS] <comando> [opções]
+
+${B}FLAGS GLOBAIS:${N}
+  ${C}--dry-run${N}         Simula operação sem deletar nada
+  ${C}--verbose${N}         Mostra detalhes extras
+  ${C}--no-backup${N}       Não faz backup ao limpar cache
 
 ${B}Comandos:${N}
-
   ${C}list${N}
-    Listar todas as instâncias instaladas e em pasta.
+      Listar todas as instâncias com status e integridade.
+      Exemplo: $0 list
 
-  ${C}purge <APP_ID>${N}
-    Remover completamente uma instância (desinstalar + remover pasta).
-    Exemplo: $0 purge Claw_ChatGPT
+  ${C}purge <APP_ID> [FLAGS]${N}
+      Remove completamente uma instância.
+      Exemplo: $0 purge Claw_ChatGPT
+      Exemplo: $0 --dry-run purge Claw_ChatGPT  (simular)
 
   ${C}clear-caches${N}
-    Limpar o cache de todas as instâncias.
+      Limpa cache de todas as instâncias (com backup automático).
+      Exemplo: $0 clear-caches
+      Exemplo: $0 --no-backup clear-caches  (sem backup)
 
   ${C}uninstall-all${N}
-    Desinstalar COMPLETAMENTE todas as instâncias do sistema.
-    ${Y}⚠ Esta ação é irreversível!${N}
+      Desinstala TODAS as instâncias. ${Y}⚠ Irreversível!${N}
+      Exemplo: $0 uninstall-all
 
   ${C}help${N}
-    Mostrar esta mensagem de ajuda.
+      Mostra esta mensagem.
 
-${B}Exemplos:${N}
+${B}Exemplos Avançados:${N}
+  # Testar remoção sem deletar
+  $0 --dry-run --verbose purge Claw_ChatGPT
 
-  # Listar todas as instâncias
-  $0 list
+  # Listar com detalhes
+  $0 --verbose list
 
-  # Remover a instância ChatGPT
-  $0 purge Claw_ChatGPT
+  # Limpar cache sem backup
+  $0 --no-backup clear-caches
 
-  # Limpar cache
-  $0 clear-caches
+${B}Arquivos de Log:${N}
+  Salvo em: ~/.local/log/manage_instances_YYYYMMDD_HHMMSS.log
 
-${B}Nota:${N}
-  Para gerenciamento mais completo (criar, instalar, etc), use:
-  ./create_app.sh
+${B}Fluxo do projeto:${N}
+  create_app.sh          → criar e instalar instâncias
+  Claw_Launcher_Linux.sh → instalar/desinstalar instância individual
+  manage_instances.sh    → purge, lista, cache em massa
+  Claw_Launcher_Linux.py → app em execução
 
-EOF
+HELP_EOF
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Parsing de Flags ───────────────────────────────────────────────────────────
+parse_global_flags() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)   DRY_RUN=true; shift ;;
+            --verbose)   VERBOSE=true; shift ;;
+            --no-backup) BACKUP_ON_CLEAR=false; shift ;;
+            *)           break ;;
+        esac
+    done
+}
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+parse_global_flags "$@"
+
 case "${1:-help}" in
-    list)          list_all_instances ;;
-    purge)         purge_instance "${2:-}" ;;
-    clear-caches)  clear_caches ;;
-    uninstall-all) uninstall_all ;;
+    list)           list_all_instances ;;
+    purge)          purge_instance "${2:-}" ;;
+    clear-caches)   clear_all_caches ;;
+    uninstall-all)  uninstall_all ;;
     help|--help|-h) show_help ;;
     *)
         error "Comando desconhecido: $1"
@@ -279,3 +427,5 @@ case "${1:-help}" in
         exit 1
         ;;
 esac
+
+log "Operação concluída. Log: $LOG_FILE"

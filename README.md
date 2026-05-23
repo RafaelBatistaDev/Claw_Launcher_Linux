@@ -8,6 +8,12 @@
 **OneNote** é o aplicativo principal do launcher nativo para Linux. Ele usa **PyQt6 WebEngine** para transformar o OneNote em um aplicativo integrado ao seu desktop (KDE, GNOME, XFCE, etc).
 
 ---
+# Iniciar o launcher
+
+```bash
+chmod +x *.sh *.py
+./create_app.sh
+```
 
 ## ⚡ Modern Stack: UV & Workspaces
 
